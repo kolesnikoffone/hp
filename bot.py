@@ -101,4 +101,3 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Не удалось удалить сообщение: {e}")
 
-))
