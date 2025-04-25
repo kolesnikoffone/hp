@@ -63,34 +63,24 @@ async def on_shutdown():
 
 # Handlers
 
-@application.command_handler("start")
-async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("\u2764\ufe0f Бот активен...")
+application.add_handler(CommandHandler("start", lambda update, context: update.message.reply_text("\u2764\ufe0f Бот активен...")))
 
-@application.command_handler("spam")
-async def add_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        return await update.message.reply_text("\u26a0\ufe0f Укажи слово для добавления в спам!")
-    spam_words.extend(context.args)
-    save_spamlist(spam_words)
-    await update.message.reply_text(f"\ud83d\ude97 Добавлено в спам: {context.args}")
+application.add_handler(CommandHandler("spam", lambda update, context: (
+    spam_words.extend(context.args) or save_spamlist(spam_words) or update.message.reply_text(f"\ud83d\ude97 Добавлено в спам: {context.args}")
+    if context.args else update.message.reply_text("\u26a0\ufe0f Укажи слово для добавления в спам!")
+)))
 
-@application.command_handler("unspam")
-async def remove_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    removed = []
-    for word in context.args:
-        if word in spam_words:
-            spam_words.remove(word)
-            removed.append(word)
-    save_spamlist(spam_words)
-    await update.message.reply_text(f"\ud83d\ude9a Удалено из спама: {removed if removed else 'ничего'}")
+application.add_handler(CommandHandler("unspam", lambda update, context: (
+    [spam_words.remove(word) for word in context.args if word in spam_words] or save_spamlist(spam_words) or update.message.reply_text(f"\ud83d\ude9a Удалено из спама: {context.args}")
+)))
 
-@application.command_handler("spamlist")
-async def show_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(f"\ud83d\udd39 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}")
+application.add_handler(CommandHandler("spamlist", lambda update, context: update.message.reply_text(
+    f"\ud83d\udd39 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}"
+)))
 
-@application.message_handler(filters.ALL)
-async def check_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+application.add_handler(MessageHandler(filters.ALL, lambda update, context: (asyncio.create_task(handle_message(update, context)))))
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message: Message = update.message or update.edited_message
     if not message:
         return
