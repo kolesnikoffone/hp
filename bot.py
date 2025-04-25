@@ -68,26 +68,29 @@ async def webhook(req: Request):
     return "OK"
 
 # Spam command handler
-def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         spam_words.extend(context.args)
         save_spamlist(spam_words)
-        return update.message.reply_text(f"🚫 Добавлено в спам: {context.args}")
-    return update.message.reply_text("⚠️ Укажи слово для добавления в спам!")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🚫 Добавлено в спам: {context.args}")
+    else:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Укажи слово для добавления в спам!")
 
 # Unspam command handler
-def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args:
         removed = [word for word in context.args if word in spam_words]
         for word in removed:
             spam_words.remove(word)
         save_spamlist(spam_words)
-        return update.message.reply_text(f"✅ Удалено из спама: {removed}")
-    return update.message.reply_text("⚠️ Укажи слово для удаления из спама!")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Удалено из спама: {removed}")
+    else:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Укажи слово для удаления из спама!")
 
 # Spamlist command handler
-def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return update.message.reply_text(f"📋 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}")
+async def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = f"📋 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}"
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
 
 # Register command handlers
 application.add_handler(CommandHandler("spam", handle_spam))
