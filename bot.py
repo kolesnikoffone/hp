@@ -1,144 +1,67 @@
-import json
-import logging
 import os
-from fastapi import FastAPI, Request
-from telegram import Update, Message
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from telegram.error import TelegramError
+import logging
+from telegram import Update
+from telegram.ext import (ApplicationBuilder, ContextTypes, MessageHandler,
+                          CommandHandler, filters)
 
-# Logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger("bot")
 
-# Constants
-TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL") + "/webhook"
-SPAM_FILE = "spamlist.json"
+# Получение токена
+TOKEN = os.environ.get("BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("BOT_TOKEN not found in environment variables")
 
-# Load spam list
-def load_spamlist():
-    if os.path.exists(SPAM_FILE):
-        with open(SPAM_FILE, "r") as f:
-            return json.load(f)
-    return []
+# Хранилище спам-слов
+spam_words = set()
 
-# Save spam list
-def save_spamlist(words):
-    with open(SPAM_FILE, "w") as f:
-        json.dump(words, f)
-
-spam_words = load_spamlist()
-
-# Telegram application
-application = Application.builder().token(TOKEN).build()
-
-# Init FastAPI
-fastapi_app = FastAPI()
-
-@fastapi_app.on_event("startup")
-async def on_startup():
-    try:
-        await application.initialize()
-        await application.start()
-        await application.bot.delete_webhook()
-        await application.bot.set_webhook(WEBHOOK_URL)
-        logger.info("✅ Webhook установлен и обработчики запущены")
-    except Exception as e:
-        logger.error(f"❌ Ошибка при старте: {e}")
-
-@fastapi_app.on_event("shutdown")
-async def on_shutdown():
-    try:
-        await application.bot.delete_webhook()
-        await application.stop()
-    except Exception as e:
-        logger.error(f"❌ Ошибка при завершении: {e}")
-
-# Healthcheck
-@fastapi_app.get("/healthz")
-async def healthz():
-    return {"status": "ok"}
-
-# Root ping for Render
-@fastapi_app.get("/")
-async def root():
-    return {"status": "alive"}
-
-# Webhook endpoint
-@fastapi_app.post("/webhook")
-async def webhook(req: Request):
-    try:
-        data = await req.json()
-        update = Update.de_json(data, application.bot)
-        await application.process_update(update)
-    except Exception as e:
-        logger.error(f"Ошибка в webhook: {e}\nUpdate: {data if 'data' in locals() else 'нет данных'}")
-    return "OK"
-
-# Spam command handler
+# Обработчик команды /spam
 async def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if context.args:
-            spam_words.extend(context.args)
-            save_spamlist(spam_words)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🚫 Добавлено в спам: {context.args}")
-        else:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Укажи слово для добавления в спам!")
-    except TelegramError as e:
-        logger.error(f"Ошибка в /spam: {e}")
-
-# Unspam command handler
-async def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if context.args:
-            removed = [word for word in context.args if word in spam_words]
-            for word in removed:
-                spam_words.remove(word)
-            save_spamlist(spam_words)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Удалено из спама: {removed}")
-        else:
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Укажи слово для удаления из спама!")
-    except TelegramError as e:
-        logger.error(f"Ошибка в /unspam: {e}")
-
-# Spamlist command handler
-async def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        text = f"📋 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}"
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
-    except TelegramError as e:
-        logger.error(f"Ошибка в /spamlist: {e}")
-
-# Message processing logic
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message: Message = update.message or update.edited_message
-    if not message:
-        logger.warning(f"❗️ Пропущен update без message: {update}")
+    if not context.args:
+        await update.message.reply_text("❗ Укажи слово для добавления в спам.")
         return
+    for word in context.args:
+        spam_words.add(word.lower())
+    await update.message.reply_text(f"🚫 Добавлено в спам: {context.args}")
 
-    try:
-        text = message.text or message.caption or ""
-        logger.info(f"📩 Пришло сообщение: {text}")
+# Обработчик команды /unspam
+async def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❗ Укажи слово для удаления из спама.")
+        return
+    for word in context.args:
+        spam_words.discard(word.lower())
+    await update.message.reply_text(f"✅ Удалено из спама: {context.args}")
 
-        if message.forward_date or message.forward_from:
-            logger.info("📨 Обнаружено пересланное сообщение")
+# Обработчик команды /spamlist
+async def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not spam_words:
+        await update.message.reply_text("📭 Список спам-слов пуст.")
+    else:
+        await update.message.reply_text("📃 Спам-слова: " + ", ".join(spam_words))
 
-        if any(word.lower() in text.lower() for word in spam_words):
-            await context.bot.delete_message(chat_id=message.chat_id, message_id=message.message_id)
-            logger.info(f"💔 Удалено сообщение: {text}")
-    except Exception as e:
-        logger.error(f"❌ Ошибка при обработке сообщения: {e}")
+# Основной фильтр сообщений
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg_text = update.message.text.lower()
+    logger.info(f"📩 Пришло сообщение: {msg_text}")
+    if any(word in msg_text for word in spam_words):
+        try:
+            await context.bot.delete_message(chat_id=update.message.chat_id,
+                                             message_id=update.message.message_id)
+            logger.info(f"💔 Удалено сообщение: {msg_text}")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении: {e}")
 
-# Register command handlers
-application.add_handler(CommandHandler("spam", handle_spam))
-application.add_handler(CommandHandler("unspam", handle_unspam))
-application.add_handler(CommandHandler("spamlist", handle_spamlist))
+if __name__ == "__main__":
+    application = ApplicationBuilder().token(TOKEN).build()
 
-# Message handler
-application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    application.add_handler(CommandHandler("spam", handle_spam))
+    application.add_handler(CommandHandler("unspam", handle_unspam))
+    application.add_handler(CommandHandler("spamlist", handle_spamlist))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Global error handler
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(f"🚨 Unhandled exception: {context.error}\nUpdate: {update}")
-
-application.add_error_handler(error_handler)
+    logger.info("🤖 Бот запущен!")
+    application.run_polling()
