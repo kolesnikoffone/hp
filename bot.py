@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from telegram import Update, Message
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.error import TelegramError
 
 # Logging
 logging.basicConfig(level=logging.INFO)
@@ -69,28 +70,37 @@ async def webhook(req: Request):
 
 # Spam command handler
 async def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args:
-        spam_words.extend(context.args)
-        save_spamlist(spam_words)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🚫 Добавлено в спам: {context.args}")
-    else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Укажи слово для добавления в спам!")
+    try:
+        if context.args:
+            spam_words.extend(context.args)
+            save_spamlist(spam_words)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🚫 Добавлено в спам: {context.args}")
+        else:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Укажи слово для добавления в спам!")
+    except TelegramError as e:
+        logger.error(f"Ошибка в /spam: {e}")
 
 # Unspam command handler
 async def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args:
-        removed = [word for word in context.args if word in spam_words]
-        for word in removed:
-            spam_words.remove(word)
-        save_spamlist(spam_words)
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Удалено из спама: {removed}")
-    else:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Укажи слово для удаления из спама!")
+    try:
+        if context.args:
+            removed = [word for word in context.args if word in spam_words]
+            for word in removed:
+                spam_words.remove(word)
+            save_spamlist(spam_words)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"✅ Удалено из спама: {removed}")
+        else:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ Укажи слово для удаления из спама!")
+    except TelegramError as e:
+        logger.error(f"Ошибка в /unspam: {e}")
 
 # Spamlist command handler
 async def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = f"📋 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}"
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+    try:
+        text = f"📋 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}"
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+    except TelegramError as e:
+        logger.error(f"Ошибка в /spamlist: {e}")
 
 # Register command handlers
 application.add_handler(CommandHandler("spam", handle_spam))
@@ -121,3 +131,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"💔 Удалено сообщение: {text}")
         except Exception as e:
             logger.error(f"❌ Не удалось удалить сообщение: {e}")
+
+# Global error handler
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(f"🚨 Unhandled exception: {context.error}")
+
+application.add_error_handler(error_handler)
