@@ -78,7 +78,7 @@ application.add_handler(CommandHandler("unspam", lambda update, context: (
 
 application.add_handler(CommandHandler("spamlist", lambda update, context: update.message.reply_text(f"Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}")))
 
-application.add_handler(MessageHandler(filters.ALL, lambda update, context: (asyncio.create_task(handle_message(update, context)))))
+application.add_handler(MessageHandler(filters.ALL, lambda update, context: asyncio.create_task(handle_message(update, context))))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message: Message = update.message or update.edited_message
