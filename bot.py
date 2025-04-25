@@ -51,6 +51,11 @@ fastapi_app = FastAPI(lifespan=lifespan)
 async def healthz():
     return {"status": "ok"}
 
+# Root ping for Render
+@fastapi_app.get("/")
+async def root():
+    return {"status": "alive"}
+
 # Webhook endpoint
 @fastapi_app.post("/webhook")
 async def webhook(req: Request):
