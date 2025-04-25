@@ -1,9 +1,13 @@
 
 import os
 import json
-import asyncio
 from telegram import Update
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+
+from fastapi import FastAPI, Request
+from starlette.responses import Response
+
+import uvicorn
 
 BANNED_FILE = "banned_words.json"
 
@@ -20,18 +24,15 @@ def save_banned_words(words):
 BANNED_WORDS = load_banned_words()
 
 async def delete_bad_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        if update.message and update.message.text:
-            text = update.message.text.lower()
-            for word in BANNED_WORDS:
-                if word in text:
-                    print(f"🚫 Найдено запрещённое слово: '{word}' в '{text}'")
-                    await asyncio.sleep(0.5)  # мягкая задержка
+    if update.message and update.message.text:
+        text = update.message.text.lower()
+        for word in BANNED_WORDS:
+            if word in text:
+                try:
                     await update.message.delete()
-                    print(f"✅ Сообщение удалено")
                     break
-    except Exception as e:
-        print(f"❌ Ошибка при удалении: {e}")
+                except Exception as e:
+                    print(f"Ошибка удаления: {e}")
 
 async def add_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -65,12 +66,7 @@ async def list_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📃 Список спама:\n{text}")
 
 TOKEN = os.getenv("BOT_TOKEN")
-
-if not TOKEN:
-    print("❌ BOT_TOKEN не установлен в окружении")
-    exit()
-
-print("🤖 Бот запускается...")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например: https://твой-домен.onrender.com
 
 app = ApplicationBuilder().token(TOKEN).build()
 
@@ -79,5 +75,23 @@ app.add_handler(CommandHandler("spam", add_spam))
 app.add_handler(CommandHandler("unspam", remove_spam))
 app.add_handler(CommandHandler("spamlist", list_spam))
 
-print("✅ Бот запущен и слушает сообщения")
-app.run_polling()
+fastapi_app = FastAPI()
+
+@fastapi_app.post("/webhook")
+async def telegram_webhook(req: Request):
+    data = await req.json()
+    await app.update_queue.put(Update.de_json(data, app.bot))
+    return Response(status_code=200)
+
+@fastapi_app.on_event("startup")
+async def on_startup():
+    await app.bot.set_webhook(WEBHOOK_URL + "/webhook")
+    print("✅ Webhook установлен")
+
+@fastapi_app.on_event("shutdown")
+async def on_shutdown():
+    await app.bot.delete_webhook()
+    print("🛑 Webhook отключён")
+
+if __name__ == "__main__":
+    uvicorn.run(fastapi_app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
