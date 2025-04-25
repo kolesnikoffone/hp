@@ -81,7 +81,7 @@ async def list_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"❌ Ошибка в list_spam: {e}")
 
-# 🔁 Периодический лог "бот жив"
+# 🔁 Периодический лог
 async def health_ping():
     while True:
         print("💓 Бот активен...")
@@ -99,18 +99,22 @@ application.add_handler(CommandHandler("spamlist", list_spam))
 
 fastapi_app = FastAPI()
 
+@fastapi_app.get("/")
+async def root():
+    return {"status": "ok", "message": "Bot is running"}
+
 @fastapi_app.on_event("startup")
 async def startup():
     print("🌐 FastAPI startup")
     await application.initialize()
     await application.bot.set_webhook(WEBHOOK_URL + "/webhook")
     await application.start()
+    asyncio.create_task(health_ping())
     print("✅ Webhook установлен и приложение запущено")
-    asyncio.create_task(health_ping())  # Пинг
 
 @fastapi_app.on_event("shutdown")
 async def shutdown():
-    print("🛑 Завершаем работу...")
+    print("🛑 FastAPI shutdown triggered — Render завершает процесс")
     await application.stop()
     await application.bot.delete_webhook()
     print("🧹 Webhook удалён, завершение")
@@ -123,7 +127,7 @@ async def telegram_webhook(req: Request):
         await application.update_queue.put(update)
         print("📩 Пришло новое обновление")
     except Exception as e:
-        print(f"❌ Ошибка в обработке вебхука: {e}")
+        print(f"❌ Ошибка в webhook: {e}")
     return Response(status_code=200)
 
 if __name__ == "__main__":
