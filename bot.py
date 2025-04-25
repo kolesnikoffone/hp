@@ -64,7 +64,7 @@ async def webhook(req: Request):
         update = Update.de_json(data, application.bot)
         await application.process_update(update)
     except Exception as e:
-        logger.error(f"Ошибка в webhook: {e}")
+        logger.error(f"Ошибка в webhook: {e}\nUpdate: {data if 'data' in locals() else 'нет данных'}")
     return "OK"
 
 # Spam command handler
@@ -105,14 +105,13 @@ async def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message: Message = update.message or update.edited_message
     if not message:
+        logger.warning(f"❗️ Пропущен update без message: {update}")
         return
 
     text = message.text or message.caption or ""
 
-    # Log incoming messages
     logger.info(f"📩 Пришло сообщение: {text}")
 
-    # Check forwarded messages
     if message.forward_date or message.forward_from:
         logger.info("📨 Обнаружено пересланное сообщение")
 
@@ -133,6 +132,6 @@ application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle
 
 # Global error handler
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    logger.error(f"🚨 Unhandled exception: {context.error}")
+    logger.error(f"🚨 Unhandled exception: {context.error}\nUpdate: {update}")
 
 application.add_error_handler(error_handler)
