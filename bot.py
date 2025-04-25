@@ -63,8 +63,6 @@ async def webhook(req: Request):
     return "OK"
 
 # Handlers
-application.add_handler(CommandHandler("start", lambda update, context: update.message.reply_text("Бот активен...")))
-
 application.add_handler(CommandHandler("spam", lambda update, context: (
     spam_words.extend(context.args) or save_spamlist(spam_words) or update.message.reply_text(f"Добавлено в спам: {context.args}")
     if context.args else update.message.reply_text("⚠️ Укажи слово для добавления в спам!")
