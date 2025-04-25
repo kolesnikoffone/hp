@@ -62,23 +62,37 @@ async def webhook(req: Request):
         logger.error(f"Ошибка в webhook: {e}")
     return "OK"
 
-# Handlers
-application.add_handler(CommandHandler("spam", lambda update, context: (
-    spam_words.extend(context.args) or save_spamlist(spam_words) or update.message.reply_text(f"Добавлено в спам: {context.args}")
-    if context.args else update.message.reply_text("⚠️ Укажи слово для добавления в спам!")
-)))
+# Spam command handler
+def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        spam_words.extend(context.args)
+        save_spamlist(spam_words)
+        return update.message.reply_text(f"🚫 Добавлено в спам: {context.args}")
+    return update.message.reply_text("⚠️ Укажи слово для добавления в спам!")
 
-application.add_handler(CommandHandler("unspam", lambda update, context: (
-    [spam_words.remove(word) for word in context.args if word in spam_words],
-    save_spamlist(spam_words),
-    update.message.reply_text(f"Удалено из спама: {context.args}")
-)[-1] if context.args else update.message.reply_text("⚠️ Укажи слово для удаления из спама!")
-))
+# Unspam command handler
+def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if context.args:
+        removed = [word for word in context.args if word in spam_words]
+        for word in removed:
+            spam_words.remove(word)
+        save_spamlist(spam_words)
+        return update.message.reply_text(f"✅ Удалено из спама: {removed}")
+    return update.message.reply_text("⚠️ Укажи слово для удаления из спама!")
 
-application.add_handler(CommandHandler("spamlist", lambda update, context: update.message.reply_text(f"Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}")))
+# Spamlist command handler
+def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return update.message.reply_text(f"📋 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}")
 
-application.add_handler(MessageHandler(filters.ALL, lambda update, context: asyncio.create_task(handle_message(update, context))))
+# Register command handlers
+application.add_handler(CommandHandler("spam", handle_spam))
+application.add_handler(CommandHandler("unspam", handle_unspam))
+application.add_handler(CommandHandler("spamlist", handle_spamlist))
 
+# Message handler
+application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), lambda update, context: asyncio.create_task(handle_message(update, context))))
+
+# Message processing logic
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message: Message = update.message or update.edited_message
     if not message:
@@ -86,13 +100,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = message.text or message.caption or ""
 
+    # Log incoming messages
+    logger.info(f"📩 Пришло сообщение: {text}")
+
     # Check forwarded messages
     if message.forward_date or message.forward_from:
-        text = (message.text or message.caption) or ""
+        logger.info("📨 Обнаружено пересланное сообщение")
 
     if any(word.lower() in text.lower() for word in spam_words):
         try:
             await message.delete()
             logger.info(f"💔 Удалено сообщение: {text}")
         except Exception as e:
-            logger.error(f"Не удалось удалить сообщение: {e}")
+            logger.error(f"❌ Не удалось удалить сообщение: {e}")
