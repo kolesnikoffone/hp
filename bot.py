@@ -65,7 +65,7 @@ async def on_shutdown():
 
 # Handlers
 
-application.add_handler(CommandHandler("start", lambda update, context: update.message.reply_text("\u2764\ufe0f Бот активен...")))
+application.add_handler(CommandHandler("start", lambda update, context: update.message.reply_text("Бот активен...")))
 
 application.add_handler(CommandHandler("spam", lambda update, context: (
     spam_words.extend(context.args) or save_spamlist(spam_words) or update.message.reply_text(f"\ud83d\ude97 Добавлено в спам: {context.args}")
@@ -77,7 +77,7 @@ application.add_handler(CommandHandler("unspam", lambda update, context: (
 )))
 
 application.add_handler(CommandHandler("spamlist", lambda update, context: update.message.reply_text(
-    f"\ud83d\udd39 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}"
+    f"Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}"
 )))
 
 application.add_handler(MessageHandler(filters.ALL, lambda update, context: (asyncio.create_task(handle_message(update, context)))))
