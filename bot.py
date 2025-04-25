@@ -73,8 +73,11 @@ application.add_handler(CommandHandler("spam", lambda update, context: (
 )))
 
 application.add_handler(CommandHandler("unspam", lambda update, context: (
-    [spam_words.remove(word) for word in context.args if word in spam_words] or save_spamlist(spam_words) or update.message.reply_text(f"Удалено из спама: {context.args}")
-)))
+    [spam_words.remove(word) for word in context.args if word in spam_words],
+    save_spamlist(spam_words),
+    update.message.reply_text(f"Удалено из спама: {context.args}")
+)[-1] if context.args else update.message.reply_text("⚠️ Укажи слово для удаления из спама!")
+))
 
 application.add_handler(CommandHandler("spamlist", lambda update, context: update.message.reply_text(f"Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}")))
 
