@@ -37,14 +37,20 @@ fastapi_app = FastAPI()
 
 @fastapi_app.on_event("startup")
 async def on_startup():
-    await application.initialize()
-    await application.bot.delete_webhook()
-    await application.bot.set_webhook(WEBHOOK_URL)
-    logger.info("✅ Webhook установлен и обработчики запущены")
+    try:
+        await application.initialize()
+        await application.bot.delete_webhook()
+        await application.bot.set_webhook(WEBHOOK_URL)
+        logger.info("✅ Webhook установлен и обработчики запущены")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при старте: {e}")
 
 @fastapi_app.on_event("shutdown")
 async def on_shutdown():
-    await application.bot.delete_webhook()
+    try:
+        await application.bot.delete_webhook()
+    except Exception as e:
+        logger.error(f"❌ Ошибка при завершении: {e}")
 
 # Healthcheck
 @fastapi_app.get("/healthz")
@@ -108,19 +114,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.warning(f"❗️ Пропущен update без message: {update}")
         return
 
-    text = message.text or message.caption or ""
+    try:
+        text = message.text or message.caption or ""
+        logger.info(f"📩 Пришло сообщение: {text}")
 
-    logger.info(f"📩 Пришло сообщение: {text}")
+        if message.forward_date or message.forward_from:
+            logger.info("📨 Обнаружено пересланное сообщение")
 
-    if message.forward_date or message.forward_from:
-        logger.info("📨 Обнаружено пересланное сообщение")
-
-    if any(word.lower() in text.lower() for word in spam_words):
-        try:
+        if any(word.lower() in text.lower() for word in spam_words):
             await message.delete()
             logger.info(f"💔 Удалено сообщение: {text}")
-        except Exception as e:
-            logger.error(f"❌ Не удалось удалить сообщение: {e}")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при обработке сообщения: {e}")
 
 # Register command handlers
 application.add_handler(CommandHandler("spam", handle_spam))
