@@ -1,12 +1,11 @@
 
 import os
 import json
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-
 from fastapi import FastAPI, Request
 from starlette.responses import Response
-
 import uvicorn
 
 BANNED_FILE = "banned_words.json"
@@ -66,32 +65,37 @@ async def list_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📃 Список спама:\n{text}")
 
 TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например: https://твой-домен.onrender.com
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-app = ApplicationBuilder().token(TOKEN).build()
+application = ApplicationBuilder().token(TOKEN).build()
 
-app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), delete_bad_messages))
-app.add_handler(CommandHandler("spam", add_spam))
-app.add_handler(CommandHandler("unspam", remove_spam))
-app.add_handler(CommandHandler("spamlist", list_spam))
+# Обработчики
+application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), delete_bad_messages))
+application.add_handler(CommandHandler("spam", add_spam))
+application.add_handler(CommandHandler("unspam", remove_spam))
+application.add_handler(CommandHandler("spamlist", list_spam))
 
 fastapi_app = FastAPI()
+
+@fastapi_app.on_event("startup")
+async def startup():
+    await application.initialize()
+    await application.bot.set_webhook(WEBHOOK_URL + "/webhook")
+    await application.start()
+    print("✅ Webhook установлен и обработчики запущены")
+
+@fastapi_app.on_event("shutdown")
+async def shutdown():
+    await application.stop()
+    await application.bot.delete_webhook()
+    print("🛑 Webhook отключён и приложение остановлено")
 
 @fastapi_app.post("/webhook")
 async def telegram_webhook(req: Request):
     data = await req.json()
-    await app.update_queue.put(Update.de_json(data, app.bot))
+    update = Update.de_json(data, application.bot)
+    await application.update_queue.put(update)
     return Response(status_code=200)
-
-@fastapi_app.on_event("startup")
-async def on_startup():
-    await app.bot.set_webhook(WEBHOOK_URL + "/webhook")
-    print("✅ Webhook установлен")
-
-@fastapi_app.on_event("shutdown")
-async def on_shutdown():
-    await app.bot.delete_webhook()
-    print("🛑 Webhook отключён")
 
 if __name__ == "__main__":
     uvicorn.run(fastapi_app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
