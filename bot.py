@@ -68,17 +68,15 @@ async def on_shutdown():
 application.add_handler(CommandHandler("start", lambda update, context: update.message.reply_text("Бот активен...")))
 
 application.add_handler(CommandHandler("spam", lambda update, context: (
-    spam_words.extend(context.args) or save_spamlist(spam_words) or update.message.reply_text(f"\ud83d\ude97 Добавлено в спам: {context.args}")
+    spam_words.extend(context.args) or save_spamlist(spam_words) or update.message.reply_text(f"Добавлено в спам: {context.args}")
     if context.args else update.message.reply_text("\u26a0\ufe0f Укажи слово для добавления в спам!")
 )))
 
 application.add_handler(CommandHandler("unspam", lambda update, context: (
-    [spam_words.remove(word) for word in context.args if word in spam_words] or save_spamlist(spam_words) or update.message.reply_text(f"\ud83d\ude9a Удалено из спама: {context.args}")
+    [spam_words.remove(word) for word in context.args if word in spam_words] or save_spamlist(spam_words) or update.message.reply_text(f"Удалено из спама: {context.args}")
 )))
 
-application.add_handler(CommandHandler("spamlist", lambda update, context: update.message.reply_text(
-    f"Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}"
-)))
+application.add_handler(CommandHandler("spamlist", lambda update, context: update.message.reply_text(f"Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}")))
 
 application.add_handler(MessageHandler(filters.ALL, lambda update, context: (asyncio.create_task(handle_message(update, context)))))
 
