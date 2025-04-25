@@ -1,134 +1,109 @@
-
-import os
 import json
-import asyncio
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+import logging
+import os
 from fastapi import FastAPI, Request
-from starlette.responses import Response
-import uvicorn
+from telegram import Update, Message
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-print("🚀 Бот запускается...")
+# Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-BANNED_FILE = "banned_words.json"
-
-def load_banned_words():
-    if not os.path.exists(BANNED_FILE):
-        print("📂 Нет файла со стоп-словами. Создаём новый.")
-        return []
-    with open(BANNED_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-def save_banned_words(words):
-    with open(BANNED_FILE, "w", encoding="utf-8") as f:
-        json.dump(words, f, ensure_ascii=False, indent=2)
-
-BANNED_WORDS = load_banned_words()
-
-async def delete_bad_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        message = update.message
-        if message and message.text:
-            text = message.text.lower()
-            print(f"🔍 Проверяем сообщение: {text}")
-            for word in BANNED_WORDS:
-                if word in text:
-                    await message.delete()
-                    print(f"🗑 Удалено сообщение за слово: {word}")
-                    break
-    except Exception as e:
-        print(f"❌ Ошибка в delete_bad_messages: {e}")
-
-async def add_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        print("📥 Команда /spam:", context.args)
-        if not context.args:
-            await update.message.reply_text("⚠️ Используй: /spam <слово или фраза>")
-            return
-        phrase = " ".join(context.args).lower()
-        if phrase not in BANNED_WORDS:
-            BANNED_WORDS.append(phrase)
-            save_banned_words(BANNED_WORDS)
-            await update.message.reply_text(f"✅ Добавлено в спам: {phrase}")
-        else:
-            await update.message.reply_text("🔁 Уже в списке спама.")
-    except Exception as e:
-        print(f"❌ Ошибка в add_spam: {e}")
-
-async def remove_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        print("📥 Команда /unspam:", context.args)
-        if not context.args:
-            await update.message.reply_text("⚠️ Используй: /unspam <слово>")
-            return
-        phrase = " ".join(context.args).lower()
-        if phrase in BANNED_WORDS:
-            BANNED_WORDS.remove(phrase)
-            save_banned_words(BANNED_WORDS)
-            await update.message.reply_text(f"❌ Удалено из спама: {phrase}")
-        else:
-            await update.message.reply_text("❗ Такого слова нет в списке.")
-    except Exception as e:
-        print(f"❌ Ошибка в remove_spam: {e}")
-
-async def list_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        print("📥 Команда /spamlist")
-        if not BANNED_WORDS:
-            await update.message.reply_text("📭 Список спама пуст.")
-        else:
-            text = "\n".join(f"- {w}" for w in BANNED_WORDS)
-            await update.message.reply_text(f"📃 Список спама:\n{text}")
-    except Exception as e:
-        print(f"❌ Ошибка в list_spam: {e}")
-
-async def health_ping():
-    while True:
-        print("💓 Бот активен...")
-        await asyncio.sleep(30)
-
-TOKEN = os.getenv("BOT_TOKEN")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-
-application = ApplicationBuilder().token(TOKEN).build()
-
-application.add_handler(MessageHandler(filters.ALL, delete_bad_messages))
-application.add_handler(CommandHandler("spam", add_spam))
-application.add_handler(CommandHandler("unspam", remove_spam))
-application.add_handler(CommandHandler("spamlist", list_spam))
-
+# Init FastAPI
 fastapi_app = FastAPI()
 
-@fastapi_app.get("/")
-async def root():
-    return {"status": "ok", "message": "Bot is running"}
+# Constants
+TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL") + "/webhook"
+SPAM_FILE = "spamlist.json"
 
-@fastapi_app.on_event("startup")
-async def startup():
-    print("🌐 FastAPI startup")
-    await application.initialize()
-    await application.bot.set_webhook(WEBHOOK_URL + "/webhook")
-    await application.start()
-    asyncio.create_task(health_ping())
-    print("✅ Webhook установлен и приложение запущено")
+# Load spam list
+def load_spamlist():
+    if os.path.exists(SPAM_FILE):
+        with open(SPAM_FILE, "r") as f:
+            return json.load(f)
+    return []
 
-@fastapi_app.on_event("shutdown")
-async def shutdown():
-    print("🛑 FastAPI shutdown triggered — Render завершает процесс")
-    await application.stop()
-    await application.bot.delete_webhook()
-    print("🧹 Webhook удалён, завершение")
+# Save spam list
+def save_spamlist(words):
+    with open(SPAM_FILE, "w") as f:
+        json.dump(words, f)
 
+spam_words = load_spamlist()
+
+# Telegram application
+application = Application.builder().token(TOKEN).build()
+
+# Healthcheck
+@fastapi_app.get("/healthz")
+async def healthz():
+    return {"status": "ok"}
+
+# Webhook endpoint
 @fastapi_app.post("/webhook")
-async def telegram_webhook(req: Request):
+async def webhook(req: Request):
     try:
         data = await req.json()
         update = Update.de_json(data, application.bot)
-        await application.update_queue.put(update)
-        print("📩 Пришло новое обновление")
+        await application.process_update(update)
     except Exception as e:
-        print(f"❌ Ошибка в webhook: {e}")
-    return Response(status_code=200)
+        logger.error(f"Ошибка в webhook: {e}")
+    return "OK"
 
-if __name__ == "__main__":
-    uvicorn.run(fastapi_app, host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+# Startup and shutdown
+@fastapi_app.on_event("startup")
+async def on_startup():
+    await application.bot.delete_webhook()
+    await application.bot.set_webhook(WEBHOOK_URL)
+    logger.info("\u2705 Webhook установлен и обработчики запущены")
+
+@fastapi_app.on_event("shutdown")
+async def on_shutdown():
+    await application.bot.delete_webhook()
+
+# Handlers
+
+@application.command_handler("start")
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("\u2764\ufe0f Бот активен...")
+
+@application.command_handler("spam")
+async def add_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        return await update.message.reply_text("\u26a0\ufe0f Укажи слово для добавления в спам!")
+    spam_words.extend(context.args)
+    save_spamlist(spam_words)
+    await update.message.reply_text(f"\ud83d\ude97 Добавлено в спам: {context.args}")
+
+@application.command_handler("unspam")
+async def remove_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    removed = []
+    for word in context.args:
+        if word in spam_words:
+            spam_words.remove(word)
+            removed.append(word)
+    save_spamlist(spam_words)
+    await update.message.reply_text(f"\ud83d\ude9a Удалено из спама: {removed if removed else 'ничего'}")
+
+@application.command_handler("spamlist")
+async def show_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(f"\ud83d\udd39 Список спам-слов: {', '.join(spam_words) if spam_words else 'Пусто'}")
+
+@application.message_handler(filters.ALL)
+async def check_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message: Message = update.message or update.edited_message
+    if not message:
+        return
+
+    text = message.text or message.caption or ""
+
+    # Check forwarded messages
+    if message.forward_date or message.forward_from:
+        text = (message.text or message.caption) or ""
+
+    if any(word.lower() in text.lower() for word in spam_words):
+        try:
+            await message.delete()
+            logger.info(f"\ud83d\udc94 Удалено сообщение: {text}")
+        except Exception as e:
+            logger.error(f"Не удалось удалить сообщение: {e}")
