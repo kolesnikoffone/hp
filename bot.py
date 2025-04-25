@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import asyncio
-from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from telegram import Update, Message
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -34,18 +33,19 @@ spam_words = load_spamlist()
 # Telegram application
 application = Application.builder().token(TOKEN).build()
 
-# Lifespan event for FastAPI
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+# Init FastAPI
+fastapi_app = FastAPI()
+
+@fastapi_app.on_event("startup")
+async def on_startup():
     await application.initialize()
     await application.bot.delete_webhook()
     await application.bot.set_webhook(WEBHOOK_URL)
     logger.info("✅ Webhook установлен и обработчики запущены")
-    yield
-    await application.bot.delete_webhook()
 
-# Init FastAPI with lifespan
-fastapi_app = FastAPI(lifespan=lifespan)
+@fastapi_app.on_event("shutdown")
+async def on_shutdown():
+    await application.bot.delete_webhook()
 
 # Healthcheck
 @fastapi_app.get("/healthz")
@@ -108,7 +108,7 @@ application.add_handler(CommandHandler("unspam", handle_unspam))
 application.add_handler(CommandHandler("spamlist", handle_spamlist))
 
 # Message handler
-application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), lambda update, context: asyncio.create_task(handle_message(update, context))))
+application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
 # Message processing logic
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
