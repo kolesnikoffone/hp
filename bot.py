@@ -39,6 +39,7 @@ fastapi_app = FastAPI()
 async def on_startup():
     try:
         await application.initialize()
+        await application.start()
         await application.bot.delete_webhook()
         await application.bot.set_webhook(WEBHOOK_URL)
         logger.info("✅ Webhook установлен и обработчики запущены")
@@ -49,6 +50,7 @@ async def on_startup():
 async def on_shutdown():
     try:
         await application.bot.delete_webhook()
+        await application.stop()
     except Exception as e:
         logger.error(f"❌ Ошибка при завершении: {e}")
 
@@ -122,7 +124,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info("📨 Обнаружено пересланное сообщение")
 
         if any(word.lower() in text.lower() for word in spam_words):
-            await message.delete()
+            await context.bot.delete_message(chat_id=message.chat_id, message_id=message.message_id)
             logger.info(f"💔 Удалено сообщение: {text}")
     except Exception as e:
         logger.error(f"❌ Ошибка при обработке сообщения: {e}")
