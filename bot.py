@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import asyncio
 from fastapi import FastAPI, Request
 from telegram import Update, Message
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -97,3 +98,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"\ud83d\udc94 Удалено сообщение: {text}")
         except Exception as e:
             logger.error(f"Не удалось удалить сообщение: {e}")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("bot:fastapi_app", host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
