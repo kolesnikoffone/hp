@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-import asyncio
 from fastapi import FastAPI, Request
 from telegram import Update, Message
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -102,14 +101,6 @@ async def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except TelegramError as e:
         logger.error(f"Ошибка в /spamlist: {e}")
 
-# Register command handlers
-application.add_handler(CommandHandler("spam", handle_spam))
-application.add_handler(CommandHandler("unspam", handle_unspam))
-application.add_handler(CommandHandler("spamlist", handle_spamlist))
-
-# Message handler
-application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
 # Message processing logic
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message: Message = update.message or update.edited_message
@@ -131,6 +122,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             logger.info(f"💔 Удалено сообщение: {text}")
         except Exception as e:
             logger.error(f"❌ Не удалось удалить сообщение: {e}")
+
+# Register command handlers
+application.add_handler(CommandHandler("spam", handle_spam))
+application.add_handler(CommandHandler("unspam", handle_unspam))
+application.add_handler(CommandHandler("spamlist", handle_spamlist))
+
+# Message handler
+application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
 # Global error handler
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
