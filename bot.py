@@ -54,6 +54,7 @@ async def webhook(req: Request):
 # Startup and shutdown
 @fastapi_app.on_event("startup")
 async def on_startup():
+    await application.initialize()
     await application.bot.delete_webhook()
     await application.bot.set_webhook(WEBHOOK_URL)
     logger.info("\u2705 Webhook установлен и обработчики запущены")
