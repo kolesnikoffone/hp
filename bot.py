@@ -1,32 +1,37 @@
+
 import os
 import json
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 
-# Файл со стоп-словами
 BANNED_FILE = "banned_words.json"
 
-# Загрузка списка слов
 def load_banned_words():
     if not os.path.exists(BANNED_FILE):
         return []
     with open(BANNED_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# Сохранение списка
 def save_banned_words(words):
     with open(BANNED_FILE, "w", encoding="utf-8") as f:
         json.dump(words, f, ensure_ascii=False, indent=2)
 
-# Инициализация
 BANNED_WORDS = load_banned_words()
 
 async def delete_bad_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message and any(word in update.message.text.lower() for word in BANNED_WORDS):
-        try:
-            await update.message.delete()
-        except Exception as e:
-            print(f"Ошибка удаления: {e}")
+    try:
+        if update.message and update.message.text:
+            text = update.message.text.lower()
+            for word in BANNED_WORDS:
+                if word in text:
+                    print(f"🚫 Найдено запрещённое слово: '{word}' в '{text}'")
+                    await asyncio.sleep(0.5)  # мягкая задержка
+                    await update.message.delete()
+                    print(f"✅ Сообщение удалено")
+                    break
+    except Exception as e:
+        print(f"❌ Ошибка при удалении: {e}")
 
 async def add_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -61,12 +66,18 @@ async def list_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 TOKEN = os.getenv("BOT_TOKEN")
 
+if not TOKEN:
+    print("❌ BOT_TOKEN не установлен в окружении")
+    exit()
+
+print("🤖 Бот запускается...")
+
 app = ApplicationBuilder().token(TOKEN).build()
 
-# Обработчики
 app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), delete_bad_messages))
 app.add_handler(CommandHandler("spam", add_spam))
 app.add_handler(CommandHandler("unspam", remove_spam))
 app.add_handler(CommandHandler("spamlist", list_spam))
 
+print("✅ Бот запущен и слушает сообщения")
 app.run_polling()
