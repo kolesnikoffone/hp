@@ -100,6 +100,4 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Не удалось удалить сообщение: {e}")
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("bot:fastapi_app", host="0.0.0.0", port=int(os.getenv("PORT", 10000)))
+))
