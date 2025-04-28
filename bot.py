@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 from telegram import Update
 from telegram.ext import (ApplicationBuilder, ContextTypes, MessageHandler,
@@ -10,13 +11,30 @@ logging.basicConfig(
 )
 logger = logging.getLogger("bot")
 
-# Получение токена
 TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN not found in environment variables")
 
-# Хранилище спам-слов
-spam_words = set()
+# Файл для хранения спам-слов
+SPAM_FILE = "spam_words.json"
+
+# Загрузка спам-слов из файла
+def load_spam_words():
+    if os.path.exists(SPAM_FILE):
+        with open(SPAM_FILE, "r", encoding="utf-8") as f:
+            try:
+                return set(json.load(f))
+            except json.JSONDecodeError:
+                logger.warning("⚠️ Ошибка чтения файла спама, создаём новый.")
+                return set()
+    return set()
+
+# Сохранение спам-слов в файл
+def save_spam_words():
+    with open(SPAM_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(spam_words), f, ensure_ascii=False, indent=2)
+
+spam_words = load_spam_words()
 
 # Обработчик команды /spam
 async def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -25,6 +43,7 @@ async def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     for word in context.args:
         spam_words.add(word.lower())
+    save_spam_words()
     await update.message.reply_text(f"🚫 Добавлено в спам: {context.args}")
 
 # Обработчик команды /unspam
@@ -34,6 +53,7 @@ async def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     for word in context.args:
         spam_words.discard(word.lower())
+    save_spam_words()
     await update.message.reply_text(f"✅ Удалено из спама: {context.args}")
 
 # Обработчик команды /spamlist
