@@ -1,5 +1,4 @@
 import logging
-import asyncio
 import os
 from telegram import Update
 from telegram.ext import (
@@ -83,7 +82,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Ошибка при удалении сообщения: {e}")
 
-async def main():
+async def run():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("spam", add_spam))
@@ -95,4 +94,6 @@ async def main():
     await application.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    import asyncio
+    asyncio.get_event_loop().create_task(run())
+    asyncio.get_event_loop().run_forever()
