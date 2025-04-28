@@ -1,120 +1,98 @@
 import logging
-import os
 import asyncio
-from typing import List
-from fastapi import FastAPI
-from telegram import Update, Message
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import os
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
 
-TOKEN = os.getenv("BOT_TOKEN")
+# Настройка логирования
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# Логи
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("bot")
+# Загрузка токена из переменной окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# Инициализация бота
-application = Application.builder().token(TOKEN).build()
+# Хранилище спам-слов
+SPAM_WORDS_FILE = "spam_words.txt"
+spam_words = set()
 
-# FastAPI для healthcheck
-fastapi_app = FastAPI()
+def load_spam_words():
+    if os.path.exists(SPAM_WORDS_FILE):
+        with open(SPAM_WORDS_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                spam_words.add(line.strip().lower())
 
-# Файл для спам-слов
-SPAM_FILE = "spam_words.txt"
+def save_spam_words():
+    with open(SPAM_WORDS_FILE, "w", encoding="utf-8") as f:
+        for word in sorted(spam_words):
+            f.write(word + "\n")
 
-def load_spam_words() -> List[str]:
-    if not os.path.exists(SPAM_FILE):
-        return []
-    with open(SPAM_FILE, "r", encoding="utf-8") as f:
-        return [line.strip().lower() for line in f if line.strip()]
+# Загрузка спам-слов при старте
+load_spam_words()
 
-def save_spam_words(words: List[str]):
-    with open(SPAM_FILE, "w", encoding="utf-8") as f:
-        f.write("\n".join(words))
-
-# Команда /spam
-async def spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❌ Укажите слово или фразу для добавления в спам.")
+        await update.message.reply_text("❌ Укажите слова для добавления в спам.")
         return
-    spam_word = " ".join(context.args).lower()
-    words = load_spam_words()
-    if spam_word not in words:
-        words.append(spam_word)
-        save_spam_words(words)
-        await update.message.reply_text(f"✅ Добавлено в спам: {spam_word}")
-    else:
-        await update.message.reply_text(f"⚠️ Уже в списке спама: {spam_word}")
+    new_words = [word.lower() for word in context.args]
+    spam_words.update(new_words)
+    save_spam_words()
+    await update.message.reply_text(f"✅ Добавлены в спам: {', '.join(new_words)}")
 
-# Команда /unspam
-async def unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def remove_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❌ Укажите слово или фразу для удаления из спама.")
+        await update.message.reply_text("❌ Укажите слова для удаления из спама.")
         return
-    spam_word = " ".join(context.args).lower()
-    words = load_spam_words()
-    if spam_word in words:
-        words.remove(spam_word)
-        save_spam_words(words)
-        await update.message.reply_text(f"✅ Удалено из спама: {spam_word}")
+    removed = []
+    for word in context.args:
+        word_lower = word.lower()
+        if word_lower in spam_words:
+            spam_words.remove(word_lower)
+            removed.append(word_lower)
+    save_spam_words()
+    if removed:
+        await update.message.reply_text(f"✅ Удалены из спама: {', '.join(removed)}")
     else:
-        await update.message.reply_text(f"⚠️ Этого нет в списке спама: {spam_word}")
+        await update.message.reply_text("❌ Ничего не найдено для удаления.")
 
-# Команда /spamlist
-async def spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    words = load_spam_words()
-    if not words:
-        await update.message.reply_text("📭 Список спам-слов пуст.")
+async def list_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if spam_words:
+        await update.message.reply_text(f"📋 Список спам-слов:\n" + "\n".join(sorted(spam_words)))
     else:
-        text = "\n".join(f"• {word}" for word in words)
-        await update.message.reply_text(f"📋 Список спам-слов:\n{text}")
+        await update.message.reply_text("📋 Список спам-слов пуст.")
 
-# Обработка сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message: Message = update.message
-    if not message:
+    if update.message is None:
         return
 
-    text = ""
-    if message.text:
-        text = message.text.lower()
-    elif message.caption:
-        text = message.caption.lower()
+    message_text = update.message.text.lower() if update.message.text else ""
+    is_spam = any(word in message_text for word in spam_words)
 
-    if not text:
-        return
+    if is_spam:
+        try:
+            await context.bot.delete_message(chat_id=update.message.chat_id, message_id=update.message.message_id)
+            logger.info(f"💬 Удалено сообщение: {update.message.text}")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении сообщения: {e}")
 
-    spam_words = load_spam_words()
+async def main():
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    for phrase in spam_words:
-        if phrase in text:
-            try:
-                await context.bot.delete_message(chat_id=message.chat_id, message_id=message.message_id)
-                logger.info(f"💔 Удалено сообщение: {text}")
-            except Exception as e:
-                logger.error(f"Ошибка при удалении сообщения: {e}")
-            return
+    application.add_handler(CommandHandler("spam", add_spam))
+    application.add_handler(CommandHandler("unspam", remove_spam))
+    application.add_handler(CommandHandler("spamlist", list_spam))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-    logger.info(f"📩 Пришло сообщение: {text}")
+    logger.info("🤖 Бот запущен!")
+    await application.run_polling()
 
-# Хендлеры
-application.add_handler(CommandHandler("spam", spam))
-application.add_handler(CommandHandler("unspam", unspam))
-application.add_handler(CommandHandler("spamlist", spamlist))
-application.add_handler(MessageHandler(filters.TEXT | filters.CaptionedMediaGroup, handle_message))
-
-# FastAPI события старта и остановки
-@fastapi_app.on_event("startup")
-async def startup():
-    asyncio.create_task(application.initialize())
-    await application.start_polling()
-    logger.info("✅ Polling запущен и бот слушает обновления")
-
-@fastapi_app.on_event("shutdown")
-async def shutdown():
-    await application.stop()
-    await application.shutdown()
-
-# healthcheck
-@fastapi_app.get("/healthz")
-async def health_check():
-    return {"status": "ok"}
+if __name__ == "__main__":
+    asyncio.run(main())
