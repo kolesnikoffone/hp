@@ -1,12 +1,10 @@
 import os
 import logging
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder, ContextTypes, MessageHandler,
-    CommandHandler, filters
-)
+import asyncio
+from telegram import Update, Message
+from telegram.ext import (ApplicationBuilder, ContextTypes, MessageHandler,
+                          CommandHandler, filters)
 
-# Настройка логирования
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -18,73 +16,84 @@ TOKEN = os.environ.get("BOT_TOKEN")
 if not TOKEN:
     raise RuntimeError("BOT_TOKEN not found in environment variables")
 
-# Хранилище спам-фраз
+# Хранилище спам-слов и фраз
 spam_words = set()
 
-# Команда /spam — добавить слова в спам
+# --- Команды --- #
+
 async def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❗ Укажи фразу для добавления в спам.")
+        msg = await update.message.reply_text("❗ Укажи слово или фразу для добавления в спам.")
+        await asyncio.sleep(5)
+        await msg.delete()
+        await update.message.delete()
         return
     phrase = " ".join(context.args).lower()
     spam_words.add(phrase)
-    await update.message.reply_text(f"🚫 Добавлено в спам: {phrase}")
+    msg = await update.message.reply_text(f"🚫 Добавлено в спам: {phrase}")
+    await asyncio.sleep(5)
+    await msg.delete()
+    await update.message.delete()
 
-# Команда /unspam — удалить слова из спама
 async def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❗ Укажи фразу для удаления из спама.")
+        msg = await update.message.reply_text("❗ Укажи слово или фразу для удаления из спама.")
+        await asyncio.sleep(5)
+        await msg.delete()
+        await update.message.delete()
         return
     phrase = " ".join(context.args).lower()
-    if phrase in spam_words:
-        spam_words.remove(phrase)
-        await update.message.reply_text(f"✅ Удалено из спама: {phrase}")
-    else:
-        await update.message.reply_text(f"ℹ️ Фраза '{phrase}' не найдена в списке спама.")
+    spam_words.discard(phrase)
+    msg = await update.message.reply_text(f"✅ Удалено из спама: {phrase}")
+    await asyncio.sleep(5)
+    await msg.delete()
+    await update.message.delete()
 
-# Команда /spamlist — показать все спам-фразы
 async def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not spam_words:
-        await update.message.reply_text("📭 Список спам-фраз пуст.")
+        msg = await update.message.reply_text("📭 Список спам-слов пуст.")
     else:
-        await update.message.reply_text("📃 Спам-фразы:\n" + "\n".join(spam_words))
+        msg = await update.message.reply_text("📃 Спам-слова:\n" + "\n".join(spam_words))
+    await asyncio.sleep(5)
+    await msg.delete()
+    await update.message.delete()
 
-# Основной фильтр сообщений
+# --- Основная обработка сообщений --- #
+
+def extract_text(message: Message) -> str:
+    """Извлекает текст для анализа из разных типов сообщений."""
+    if message.text:
+        return message.text
+    if message.caption:
+        return message.caption
+    return ""
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message:
-        return
+    msg_text = extract_text(update.message).lower()
 
-    # Берем текст обычного или пересланного сообщения
-    msg_text = ""
-    if update.message.text:
-        msg_text = update.message.text.lower()
-    elif update.message.caption:
+    # Если пересланное сообщение с подписью
+    if update.message.forward_from_chat and update.message.caption:
         msg_text = update.message.caption.lower()
 
     logger.info(f"📩 Пришло сообщение: {msg_text}")
 
-    # Проверяем точное вхождение фраз
-    for spam_phrase in spam_words:
-        if spam_phrase in msg_text:
-            try:
-                await context.bot.delete_message(
-                    chat_id=update.message.chat_id,
-                    message_id=update.message.message_id
-                )
-                logger.info(f"💔 Удалено сообщение: {msg_text}")
-            except Exception as e:
-                logger.error(f"Ошибка при удалении: {e}")
-            return  # нашли — остановились
+    if any(spam_word in msg_text for spam_word in spam_words):
+        try:
+            await context.bot.delete_message(chat_id=update.message.chat_id,
+                                             message_id=update.message.message_id)
+            logger.info(f"💔 Удалено сообщение: {msg_text}")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении: {e}")
+
+# --- Запуск --- #
 
 if __name__ == "__main__":
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Обработчики команд
     application.add_handler(CommandHandler("spam", handle_spam))
     application.add_handler(CommandHandler("unspam", handle_unspam))
     application.add_handler(CommandHandler("spamlist", handle_spamlist))
-    # Обработчик всех текстов
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.ALL, handle_message))
 
     logger.info("🤖 Бот запущен!")
     application.run_polling()
