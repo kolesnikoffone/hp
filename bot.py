@@ -1,99 +1,67 @@
-import logging
 import os
+import logging
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    filters,
-    ContextTypes,
-)
+from telegram.ext import (ApplicationBuilder, ContextTypes, MessageHandler,
+                          CommandHandler, filters)
 
-# Настройка логирования
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("bot")
 
-# Загрузка токена из переменной окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+# Получение токена
+TOKEN = os.environ.get("BOT_TOKEN")
+if not TOKEN:
+    raise RuntimeError("BOT_TOKEN not found in environment variables")
 
 # Хранилище спам-слов
-SPAM_WORDS_FILE = "spam_words.txt"
 spam_words = set()
 
-def load_spam_words():
-    if os.path.exists(SPAM_WORDS_FILE):
-        with open(SPAM_WORDS_FILE, "r", encoding="utf-8") as f:
-            for line in f:
-                spam_words.add(line.strip().lower())
-
-def save_spam_words():
-    with open(SPAM_WORDS_FILE, "w", encoding="utf-8") as f:
-        for word in sorted(spam_words):
-            f.write(word + "\n")
-
-# Загрузка спам-слов при старте
-load_spam_words()
-
-async def add_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Обработчик команды /spam
+async def handle_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❌ Укажите слова для добавления в спам.")
+        await update.message.reply_text("❗ Укажи слово для добавления в спам.")
         return
-    new_words = [word.lower() for word in context.args]
-    spam_words.update(new_words)
-    save_spam_words()
-    await update.message.reply_text(f"✅ Добавлены в спам: {', '.join(new_words)}")
-
-async def remove_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("❌ Укажите слова для удаления из спама.")
-        return
-    removed = []
     for word in context.args:
-        word_lower = word.lower()
-        if word_lower in spam_words:
-            spam_words.remove(word_lower)
-            removed.append(word_lower)
-    save_spam_words()
-    if removed:
-        await update.message.reply_text(f"✅ Удалены из спама: {', '.join(removed)}")
-    else:
-        await update.message.reply_text("❌ Ничего не найдено для удаления.")
+        spam_words.add(word.lower())
+    await update.message.reply_text(f"🚫 Добавлено в спам: {context.args}")
 
-async def list_spam(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if spam_words:
-        await update.message.reply_text(f"📋 Список спам-слов:\n" + "\n".join(sorted(spam_words)))
-    else:
-        await update.message.reply_text("📋 Список спам-слов пуст.")
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message is None:
+# Обработчик команды /unspam
+async def handle_unspam(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("❗ Укажи слово для удаления из спама.")
         return
+    for word in context.args:
+        spam_words.discard(word.lower())
+    await update.message.reply_text(f"✅ Удалено из спама: {context.args}")
 
-    message_text = update.message.text.lower() if update.message.text else ""
-    is_spam = any(word in message_text for word in spam_words)
+# Обработчик команды /spamlist
+async def handle_spamlist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not spam_words:
+        await update.message.reply_text("📭 Список спам-слов пуст.")
+    else:
+        await update.message.reply_text("📃 Спам-слова: " + ", ".join(spam_words))
 
-    if is_spam:
+# Основной фильтр сообщений
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    msg_text = update.message.text.lower()
+    logger.info(f"📩 Пришло сообщение: {msg_text}")
+    if any(word in msg_text for word in spam_words):
         try:
-            await context.bot.delete_message(chat_id=update.message.chat_id, message_id=update.message.message_id)
-            logger.info(f"💬 Удалено сообщение: {update.message.text}")
+            await context.bot.delete_message(chat_id=update.message.chat_id,
+                                             message_id=update.message.message_id)
+            logger.info(f"💔 Удалено сообщение: {msg_text}")
         except Exception as e:
-            logger.error(f"Ошибка при удалении сообщения: {e}")
-
-async def run():
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    application.add_handler(CommandHandler("spam", add_spam))
-    application.add_handler(CommandHandler("unspam", remove_spam))
-    application.add_handler(CommandHandler("spamlist", list_spam))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
-    logger.info("🤖 Бот запущен!")
-    await application.run_polling()
+            logger.error(f"Ошибка при удалении: {e}")
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.get_event_loop().create_task(run())
-    asyncio.get_event_loop().run_forever()
+    application = ApplicationBuilder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("spam", handle_spam))
+    application.add_handler(CommandHandler("unspam", handle_unspam))
+    application.add_handler(CommandHandler("spamlist", handle_spamlist))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    logger.info("🤖 Бот запущен!")
+    application.run_polling()
