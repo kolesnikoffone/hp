@@ -48,7 +48,7 @@ if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
 
     # Команда /рассылка
-    app.add_handler(CommandHandler("рассылка", broadcast))
+    app.add_handler(CommandHandler("broadcast", broadcast))
 
     # Любое сообщение — отслеживаем чат
     app.add_handler(MessageHandler(filters.ALL, track_chats))
